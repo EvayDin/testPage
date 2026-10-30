@@ -35,7 +35,7 @@ pnpm dev
 
 `api/index.js` 是 Vercel Function 入口，复用 Fastify 应用，单个实例复用连接池；线上不会执行 `app.listen()`。静态文件由 Vercel 提供，前端深层路由回退到 `index.html`，`/api` 请求进入函数。连接池通过 Vercel 的 `attachDatabasePool` 管理闲置连接，参见[官方说明](https://vercel.com/kb/guide/connection-pooling-with-functions)。
 
-初次请求会自动创建用户和会话表，因此首次部署只需设置连接字符串，数据库账号需要建表权限。也可以先执行 `pnpm db:migrate` 初始化。数据库必须已存在；代码不会创建数据库本身。
+Vercel 构建命令为 `pnpm build:vercel`：先构建，再运行 `pnpm db:deploy` 升级数据库，迁移失败则构建失败。线上 Function 冷启动仅检查迁移版本，不执行建表或改表。本地开发启动会自动执行待运行迁移。数据库必须已存在；代码不会创建数据库本身。
 
 ## 目录
 
@@ -56,7 +56,10 @@ scripts/                  HTTP 集成测试与 Function 测试宿主
 
 ```sh
 pnpm dev          # 同时启动前后端开发服务
-pnpm db:migrate   # 初始化 PostgreSQL 数据表
+pnpm db:migrate   # 使用本地 .env.local 执行待运行迁移
+pnpm db:status    # 查看已执行 / 待执行迁移
+pnpm db:deploy    # 使用当前进程 DATABASE_URL 执行部署迁移
+pnpm build:vercel # 构建成功后升级数据库
 pnpm typecheck    # 检查全部包的类型
 pnpm build        # 构建前后端与共享包；无需数据库连接
 pnpm test         # 构建后端并执行真实 PostgreSQL HTTP 集成测试
@@ -93,7 +96,7 @@ pnpm start        # 使用构建结果在本地预览
 - **数据概览**：全部任务数、完成数、逾期数、完成率与最近七天每日习惯打卡数。完成率按当前全部任务计算，图表按每天打卡次数计算。
 - **异常处理**：表单保存失败保留输入，危险删除二次确认，加载与错误提示、空态、移动端适配；用户只能访问自己的任务、清单、习惯与统计。
 
-正常执行 `pnpm dev` 即可启动；后端启动会自动按文件名顺序执行幂等 SQL，保留旧账号并补建默认清单。也可执行 `pnpm db:migrate` 手动初始化新增表。
+正常执行 `pnpm dev` 即可启动；本地后端启动会按版本记录执行待运行 SQL，保留旧账号并补建默认清单；Vercel 在构建阶段运行迁移。也可执行 `pnpm db:migrate` 手动升级本地数据库。
 
 ### 新增接口
 
@@ -129,3 +132,12 @@ pnpm start        # 使用构建结果在本地预览
 - `apps/web/src/components/TaskCard.vue`：Props / Emits 与拖拽交互。
 - `apps/web/src/components/TaskEditor.vue`：原生模态对话框、表单校验与错误恢复。
 - `scripts/workspace-checks.mjs`：真实 HTTP + PostgreSQL 集成测试，由 `pnpm test` 和 `pnpm test:vercel` 一并执行；测试使用独立 schema 并在结束后清理。
+
+
+## 数据库迭代与 Vercel 部署
+
+迁移指南见 [数据库迁移与发布](docs/database-migrations.md)。迁移文件放在 `apps/api/migrations/`，以三位递增编号命名。数据库的 `_schema_migrations` 表记录文件名、SHA-256 和执行时间，已执行的文件不再重跑，也不允许修改历史内容。
+
+`db:migrate` 自动加载 `apps/api/.env.local`，用于本地；`db:deploy` 只使用当前进程的 `DATABASE_URL`，不自动加载本地连接，适用于 Vercel / CI。两条命令使用同一迁移引擎。
+
+Vercel 中 Production 和 Preview 应配置各自独立的 `DATABASE_URL`。仓库的构建命令已设为 `pnpm build:vercel`；如果控制台手动覆盖了 Build Command，也需改成此命令。构建先通过，再执行待运行迁移；任何失败都会返回非零退出码。本地 `pnpm build` 仍不连接数据库。

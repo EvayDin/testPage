@@ -4,12 +4,15 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import { loginSchema, registerSchema, type PublicUser } from '@mvp/shared';
 import { createSession, setSessionCookie, currentUser, hashPassword, logout, verifyPassword } from './auth.js';
-import { db, initDatabase, closeDatabase } from './db.js';
+import { db, initDatabase, verifyDatabase, closeDatabase } from './db.js';
 
 export function buildApp() {
   const app = Fastify({ logger: true, bodyLimit: 16 * 1024 });
   app.register(cookie);
-  app.addHook('onReady', initDatabase);
+  app.addHook('onReady', async () => {
+    if (process.env.VERCEL) await verifyDatabase();
+    else await initDatabase();
+  });
   app.addHook('onClose', closeDatabase);
   app.setErrorHandler((error, request, reply) => {
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'

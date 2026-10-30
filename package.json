@@ -9,10 +9,13 @@
     "dev": "pnpm --filter @mvp/shared build && pnpm --parallel --filter @mvp/web --filter @mvp/api dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm --filter @mvp/shared build && pnpm -r typecheck",
-    "test": "pnpm --filter @mvp/api... build && node --env-file-if-exists=apps/api/.env.local scripts/integration.mjs",
+    "test": "pnpm --filter @mvp/api... build && node --env-file-if-exists=apps/api/.env.local scripts/migration-checks.mjs && node --env-file-if-exists=apps/api/.env.local scripts/integration.mjs",
     "start": "pnpm --parallel --filter @mvp/web --filter @mvp/api start",
     "db:migrate": "pnpm --filter @mvp/api db:migrate",
-    "test:vercel": "pnpm --filter @mvp/api... build && node --env-file-if-exists=apps/api/.env.local scripts/integration.mjs --serverless"
+    "test:vercel": "pnpm --filter @mvp/api... build && node --env-file-if-exists=apps/api/.env.local scripts/integration.mjs --serverless",
+    "db:deploy": "pnpm --filter @mvp/api db:deploy",
+    "db:status": "pnpm --filter @mvp/api db:status",
+    "build:vercel": "pnpm build && pnpm db:deploy"
   },
   "type": "module"
 }

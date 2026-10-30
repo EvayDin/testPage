@@ -7,7 +7,9 @@
     "build": "tsc",
     "start": "node --env-file-if-exists=.env.local dist/server.js",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "tsx --env-file-if-exists=.env.local src/migrate.ts"
+    "db:migrate": "tsx --env-file-if-exists=.env.local src/migrate.ts",
+    "db:deploy": "tsx src/migrate.ts",
+    "db:status": "tsx --env-file-if-exists=.env.local src/migrate.ts --status"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.0",

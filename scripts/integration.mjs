@@ -1,6 +1,7 @@
 import { workspaceChecks } from './workspace-checks.mjs';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { spawn, execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -38,6 +39,10 @@ async function call(action, body, options = {}) {
 }
 try {
   await admin.query(`CREATE SCHEMA ${schema}`);
+  // Production functions only verify versions; deploy migrations before starting them.
+  if (serverless) await promisify(execFile)(process.execPath, ['dist/migrate.js'], {
+    cwd: join(root, 'apps/api'), env: { ...process.env, DATABASE_URL: connectionString, DATABASE_SCHEMA: schema },
+  });
   startServer();
   let ready = false;
   for (let i = 0; i < 100; i++) {
