@@ -8,6 +8,18 @@ macOS 本机独立数据库的安装、建库、连接配置、密码恢复与�
 
 需要 Node.js 24.12+ 和 pnpm 11。
 
+部署到 Vercel 时，在项目的 Build and Deployment 设置中使用以下配置：
+
+| 设置 | 值 |
+| --- | --- |
+| Root Directory | 仓库根目录（留空或 `./`），不要选择 `apps/api` 或 `apps/web` |
+| Framework Preset | Other |
+| Install Command | `pnpm install --frozen-lockfile` |
+| Build Command | `pnpm build:vercel` |
+| Output Directory | `apps/web/dist` |
+
+如果报 `Command "build:vercel" not found`，先检查 Root Directory，再确认部署提交包含根目录 `package.json` 中的 `build:vercel`。该脚本只定义在仓库根目录；修正设置后，重新部署包含此脚本的提交。仓库根目录的 `vercel.json` 负责同时部署前端和 API。
+
 1. 准备一个托管 PostgreSQL 数据库，例如通过 Vercel Marketplace 创建并连接 Neon，也可使用已有 PostgreSQL。
 2. 将 `apps/api/.env.example` 复制为 `apps/api/.env.local`，填入真实的 `DATABASE_URL`。本地 `APP_ORIGIN` 保持 `http://localhost:5173`。
 3. 安装依赖并启动：
