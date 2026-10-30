@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "pnpm --workspace-root run build:vercel",
+  "buildCommand": "pnpm run build:vercel",
   "outputDirectory": "apps/web/dist",
   "functions": {
     "api/index.js": {
