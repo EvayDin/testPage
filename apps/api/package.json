@@ -1,0 +1,25 @@
+{
+  "name": "@mvp/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env.local src/server.ts",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env.local dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "tsx --env-file-if-exists=.env.local src/migrate.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.0",
+    "@mvp/shared": "workspace:*",
+    "@vercel/functions": "^3.10.4",
+    "fastify": "^5.0.0",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
