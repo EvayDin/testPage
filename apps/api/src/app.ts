@@ -1,3 +1,4 @@
+import { workspaceRoutes } from './workspace.js';
 import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
@@ -14,7 +15,7 @@ export function buildApp() {
     const status = error instanceof Error && 'statusCode' in error && typeof error.statusCode === 'number'
       ? error.statusCode : 500;
     if (status >= 500) request.log.error(error);
-    return reply.code(status).send({ message: status >= 500 ? '服务暂时不可用，请稍后重试' : '请求格式错误，请检查后重试' });
+    return reply.code(status).send({ message: status >= 500 ? '服务暂时不可用，请稍后重试' : error instanceof Error ? error.message : '请求格式错误，请检查后重试' });
   });
   app.addHook('onRequest', async (request, reply) => {
     reply.header('Cache-Control', 'no-store');
@@ -48,6 +49,7 @@ export function buildApp() {
       await client.query('BEGIN');
       await client.query('INSERT INTO users (id, name, email, password_hash, created_at) VALUES ($1, $2, $3, $4, $5)',
         [user.id, name, email, passwordHash, user.createdAt]);
+      await client.query('INSERT INTO task_lists (id, user_id, name, is_default) VALUES ($1, $2, $3, TRUE)', [randomUUID(), user.id, '默认清单']);
       const token = await createSession(user.id, request, client);
       await client.query('COMMIT');
       setSessionCookie(reply, token);
@@ -81,5 +83,6 @@ export function buildApp() {
     await logout(request, reply);
     return { message: '已退出登录' };
   });
+  app.register(workspaceRoutes, { prefix: '/api' });
   return app;
 }

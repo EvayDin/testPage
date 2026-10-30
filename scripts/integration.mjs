@@ -1,3 +1,4 @@
+import { workspaceChecks } from './workspace-checks.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
@@ -76,6 +77,7 @@ try {
   assert.equal((await call('me')).response.status, 200);
   const { rows: [row] } = await database.query('SELECT password_hash FROM users WHERE email = $1', ['test@example.com']);
   assert(!row.password_hash.includes(credentials.password));
+  await workspaceChecks(base, cookie, database);
   await database.query("UPDATE sessions SET expires_at = NOW() - INTERVAL '1 second'");
   assert.equal((await call('me')).response.status, 401, '过期会话应被拒绝');
   const concurrent = await Promise.all([1, 2].map(() => call('register', { name: '并发测试', email: 'race@example.com', password: 'password123' })));

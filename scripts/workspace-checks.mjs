@@ -1,0 +1,101 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+
+export async function workspaceChecks(base, cookie, database) {
+  async function call(path, method = 'GET', body, session = cookie) {
+    const response = await fetch(`${base}/api/${path}`, {
+      method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...(session ? { Cookie: session } : {}) },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+    return { status: response.status, data: await response.json(), response };
+  }
+  assert.equal((await call('tasks', 'GET', undefined, '')).status, 401);
+  assert.equal((await call('habits', 'GET', undefined, '')).status, 401);
+  const defaults = (await call('lists')).data.lists;
+  assert.equal(defaults.length, 1);
+  assert.equal(defaults[0].isDefault, true);
+  const defaultId = defaults[0].id;
+  assert.equal((await call(`lists/${defaultId}`, 'DELETE')).status, 400);
+  assert.equal((await call('lists', 'POST', { name: ' ' })).status, 400);
+  const list = (await call('lists', 'POST', { name: '学习' })).data.list;
+  assert.equal((await call(`lists/${list.id}`, 'PATCH', { name: 'Vue 学习' })).status, 200);
+  assert.equal((await call('tasks', 'POST', { listId: list.id, title: '' })).status, 400);
+  assert.equal((await call('tasks', 'POST', { listId: list.id, title: '任务', dueAt: 'invalid' })).status, 400);
+  const make = async (title, extra = {}) => {
+    const result = await call('tasks', 'POST', { title, listId: list.id, ...extra });
+    assert.equal(result.status, 201);
+    return result.data.task;
+  };
+  const first = await make('Vue 练习 100%_', { description: '测试说明', dueAt: '2020-01-01T00:00:00Z' });
+  const second = await make('Vue 页面', { status: 'doing', dueAt: '2099-01-01T00:00:00Z' });
+  const third = await make('其他任务');
+  assert.equal(first.overdue, true);
+  assert.equal((await call(`tasks/${first.id}`)).data.task.description, '测试说明');
+  assert.equal((await call('tasks?search=Vue&status=doing')).data.total, 1);
+  assert.equal((await call('tasks?search=100%25_')).data.total, 1, '搜索应按字面匹配而非 SQL 通配符');
+  assert.equal((await call('tasks?sort=due')).data.tasks[0].id, first.id);
+  assert.equal((await call('tasks?sort=due')).data.tasks.at(-1).id, third.id);
+  assert.equal((await call('tasks?pageSize=1&page=99')).data.page, 3);
+  assert.equal((await call('tasks?pageSize=101')).status, 400);
+  assert.equal((await call('tasks?page=-1')).status, 400);
+  assert.equal((await call('tasks/not-a-uuid')).status, 400);
+  assert.equal((await call(`tasks/${first.id}`, 'PATCH', { status: 'broken' })).status, 400);
+  assert.equal((await call(`tasks/${first.id}`, 'PATCH', {})).status, 400);
+  const registration = await call('auth/register', 'POST', { name: '隔离用户', email: `${randomUUID()}@example.com`, password: 'password123' }, '');
+  const otherCookie = registration.response.headers.get('set-cookie').split(';')[0];
+  const otherList = (await call('lists', 'GET', undefined, otherCookie)).data.lists[0];
+  assert.equal((await call('tasks', 'GET', undefined, otherCookie)).data.total, 0);
+  assert.equal((await call(`tasks/${first.id}`, 'GET', undefined, otherCookie)).status, 404);
+  assert.equal((await call(`tasks/${first.id}`, 'PATCH', { title: '不允许修改' }, otherCookie)).status, 404);
+  assert.equal((await call(`tasks/${first.id}`, 'DELETE', undefined, otherCookie)).status, 404);
+  assert.equal((await call(`lists/${list.id}`, 'DELETE', undefined, otherCookie)).status, 404);
+  assert.equal((await call('tasks', 'POST', { title: '跨用户清单', listId: list.id }, otherCookie)).status, 404);
+  assert.equal((await call(`tasks/${first.id}`, 'PATCH', { listId: otherList.id })).status, 404);
+  const foreignTask = (await call('tasks', 'POST', { title: '他人任务', listId: otherList.id }, otherCookie)).data.task;
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id, foreignTask.id], action: 'delete' })).status, 404);
+  assert.equal((await call(`tasks/${first.id}`)).status, 200, '批量操作应整体失败且不删除已有任务');
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id, second.id], action: 'move', listId: otherList.id })).status, 404);
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id], action: 'move' })).status, 400);
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id, second.id], action: 'complete' })).data.count, 2);
+  assert.equal((await call(`tasks/${first.id}`)).data.task.overdue, false);
+  assert.equal((await call(`tasks/${first.id}`, 'PATCH', { status: 'doing' })).data.task.description, '测试说明');
+  assert.equal((await call(`tasks/${first.id}`)).data.task.dueAt, '2020-01-01T00:00:00.000Z');
+  await call(`tasks/${first.id}`, 'PATCH', { status: 'done' });
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id], action: 'move', listId: defaultId })).status, 200);
+  assert.equal((await call(`lists/${list.id}`, 'DELETE')).status, 200);
+  assert.equal((await call(`tasks/${second.id}`)).data.task.listId, defaultId, '删除清单应迁移任务');
+  assert.equal((await call('lists')).data.lists[0].count, 3);
+  assert.equal((await call(`tasks/${third.id}`, 'DELETE')).status, 200);
+  const lastPage = (await call('tasks?pageSize=1&page=3')).data;
+  assert.equal(lastPage.page, 2);
+  assert.equal(lastPage.tasks.length, 1);
+  assert.equal((await call('habits', 'POST', { name: '' })).status, 400);
+  const habit = (await call('habits', 'POST', { name: '每天阅读' })).data.habit;
+  assert.equal((await call(`habits/${habit.id}/check`, 'PUT', undefined, otherCookie)).status, 404);
+  assert.equal((await call(`habits/${habit.id}`, 'DELETE', undefined, otherCookie)).status, 404);
+  const concurrent = await Promise.all([1, 2, 3].map(() => call(`habits/${habit.id}/check`, 'PUT')));
+  assert(concurrent.every(result => result.status === 200));
+  const checked = (await call('habits')).data.habits[0];
+  assert.equal(checked.checkedToday, true);
+  assert.equal(checked.totalDays, 1, '并发重复打卡不得重复计数');
+  const { rows: [{ date }] } = await database.query("SELECT to_char((NOW() AT TIME ZONE 'Asia/Shanghai')::date,'YYYY-MM-DD') AS date");
+  assert.deepEqual(checked.days, [date]);
+  await database.query("INSERT INTO habit_checks(habit_id,checked_on) VALUES($1,(NOW() AT TIME ZONE 'Asia/Shanghai')::date-1)", [habit.id]);
+  let stats = (await call('statistics')).data;
+  assert.equal(stats.total, 2); assert.equal(stats.done, 2); assert.equal(stats.completionRate, 100); assert.equal(stats.overdue, 0);
+  assert.equal(stats.week.length, 7); assert.equal(stats.week[6].date, date); assert.equal(stats.week[6].count, 1); assert.equal(stats.week[5].count, 1);
+  assert.equal((await call('statistics', 'GET', undefined, otherCookie)).data.week[6].count, 0);
+  assert.equal((await call(`habits/${habit.id}/check`, 'DELETE')).status, 200);
+  assert.equal((await call(`habits/${habit.id}/check`, 'DELETE')).status, 200);
+  assert.equal((await call('habits')).data.habits[0].checkedToday, false);
+  assert.equal((await call('habits')).data.habits[0].totalDays, 1, '撤销当天打卡不能影响历史记录');
+  assert.equal((await call(`habits/${habit.id}`, 'DELETE')).status, 200);
+  assert.equal((await call('habits')).data.habits.length, 0);
+  assert.equal((await call('statistics')).data.week[5].count, 0);
+  assert.equal((await call('tasks/batch', 'POST', { ids: [first.id, second.id], action: 'delete' })).status, 200);
+  const empty = (await call('tasks?page=99')).data;
+  assert.equal(empty.page, 1); assert.equal(empty.total, 0); assert.deepEqual(empty.tasks, []);
+  stats = (await call('statistics')).data;
+  assert.equal(stats.completionRate, 0);
+  console.log('✓ 工作空间：任务增删改查、筛选排序、分页回退、清单迁移、批量原子性、跨用户隔离、并发幂等打卡、撤销与七天统计通过');
+}

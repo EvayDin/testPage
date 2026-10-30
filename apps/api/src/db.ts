@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { attachDatabasePool } from '@vercel/functions';
 
 let pool: Pool | undefined;
@@ -21,13 +21,14 @@ export function db() {
   return pool;
 }
 export async function initDatabase() {
-  const sql = await readFile(new URL('../migrations/001_init.sql', import.meta.url), 'utf8');
+  const directory = new URL('../migrations/', import.meta.url);
+  const files = (await readdir(directory)).filter(file => /^\d+.*\.sql$/.test(file)).sort();
   const client = await db().connect();
   try {
     await client.query('BEGIN');
     // 同一 schema 下的并发启动串行建表。
     await client.query("SELECT pg_advisory_xact_lock(hashtext(current_schema() || ':launchpad:migrations'))");
-    await client.query(sql);
+    for (const file of files) await client.query(await readFile(new URL(file, directory), 'utf8'));
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');

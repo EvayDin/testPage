@@ -80,3 +80,52 @@ pnpm start        # 使用构建结果在本地预览
 | `POST /api/auth/logout` | 退出，立即使会话失效 |
 
 当前未实现找回密码、邮箱验证、登录限流和管理后台。旧 SQLite 数据不会自动迁移到 PostgreSQL。
+
+## 任务与习惯工作空间（第一、第二阶段）
+
+登录后访问 `/` 进入个人工作空间。继续使用现有的邮箱、密码登录；显示名字可重复，邮箱唯一。
+
+- **任务**：新建、编辑、删除，描述与可选截止时间，待开始 / 进行中 / 已完成三个状态；逾期标识；按标题搜索、状态和清单组合筛选；创建时间 / 截止时间排序。每页 12 项，删除末页任务后自动回到有效页面。
+- **清单**：创建、重命名、删除；默认清单自动创建且不可删除、改名。删除普通清单时，事务内把任务转移到默认清单。
+- **看板**：切换列表 / 看板，在三列之间拖动任务更新状态，保存失败恢复原状态。看板与列表使用同一分页范围，页脚提示当前页。
+- **批量操作**：选择本页全部或部分任务，批量完成、移动和删除。批量操作会校验全部任务的所有权，任一项无效时整体回滚。
+- **每日习惯**：添加、删除、当天打卡、撤销当天打卡，显示累计天数和最近七天记录。打卡日期统一按 `Asia/Shanghai`（北京时间）计算；重复请求与并发点击每天仅记一次。
+- **数据概览**：全部任务数、完成数、逾期数、完成率与最近七天每日习惯打卡数。完成率按当前全部任务计算，图表按每天打卡次数计算。
+- **异常处理**：表单保存失败保留输入，危险删除二次确认，加载与错误提示、空态、移动端适配；用户只能访问自己的任务、清单、习惯与统计。
+
+正常执行 `pnpm dev` 即可启动；后端启动会自动按文件名顺序执行幂等 SQL，保留旧账号并补建默认清单。也可执行 `pnpm db:migrate` 手动初始化新增表。
+
+### 新增接口
+
+全部接口需要有效登录 Cookie，参数由共享 Zod schema 校验。
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/lists` | 清单列表与任务数量 |
+| `POST /api/lists` | 创建清单，`{ name }` |
+| `PATCH /api/lists/:id` | 重命名普通清单，`{ name }` |
+| `DELETE /api/lists/:id` | 删除普通清单并迁移任务 |
+| `GET /api/tasks` | 查询任务，支持 `search/status/listId/sort/page/pageSize` |
+| `GET /api/tasks/:id` | 查询自己的单个任务 |
+| `POST /api/tasks` | 创建任务，`{ title, listId, description?, status?, dueAt? }` |
+| `PATCH /api/tasks/:id` | 部分更新任务；清空截止时间传 `dueAt: null` |
+| `DELETE /api/tasks/:id` | 删除任务 |
+| `POST /api/tasks/batch` | `{ ids, action: "complete" / "move" / "delete", listId? }`；最多 100 项 |
+| `GET /api/habits` | 习惯与打卡记录 |
+| `POST /api/habits` | 新建习惯，`{ name }` |
+| `DELETE /api/habits/:id` | 删除习惯及其打卡记录 |
+| `PUT /api/habits/:id/check` | 幂等完成当天打卡 |
+| `DELETE /api/habits/:id/check` | 幂等撤销当天打卡 |
+| `GET /api/statistics` | 任务统计与七天打卡聚合 |
+
+`dueAt` 使用带时区的 ISO 8601 字符串；前端把本地输入转换为 ISO 时间提交，列表按浏览器本地时区显示。任务排序 `sort=created` 表示创建时间倒序，`sort=due` 表示截止时间升序且未设截止时间的排最后。请求超出最后一页时，接口返回实际有效的 `page`。
+
+### 学习代码入口
+
+- `packages/shared/src/index.ts`：前后端共享类型、创建与部分更新参数校验。
+- `apps/api/migrations/002_workspace.sql`：关系表、复合外键、唯一约束、索引。
+- `apps/api/src/workspace.ts`：会话鉴权、参数化 SQL、事务、分页与统计。
+- `apps/web/src/views/HomePage.vue`：筛选、分页、并发请求结果保护、批量操作、打卡与统计。
+- `apps/web/src/components/TaskCard.vue`：Props / Emits 与拖拽交互。
+- `apps/web/src/components/TaskEditor.vue`：原生模态对话框、表单校验与错误恢复。
+- `scripts/workspace-checks.mjs`：真实 HTTP + PostgreSQL 集成测试，由 `pnpm test` 和 `pnpm test:vercel` 一并执行；测试使用独立 schema 并在结束后清理。
